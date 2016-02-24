@@ -95,12 +95,12 @@
 #define FLOW_METER_MIN_FREQUENCY       15
 #define PWM_MAX_PERIOD                 1954  // This is equiv to 10Hz 
 
-#define A37073_TRISA_VALUE 0b1111 1111 0011 1111
-#define A37073_TRISB_VALUE 0b1111 1111 1111 1111
-#define A37073_TRISC_VALUE 0b1111 1111 1111 1111
-#define A37073_TRISD_VALUE 0b1111 1111 1111 1111
-#define A37073_TRISF_VALUE 0b1111 1110 0011 1111
-#define A37073_TRISG_VALUE 0b1100 1111 1111 1111
+#define A37073_TRISA_VALUE 0b1111111100111111
+#define A37073_TRISB_VALUE 0b1111111111111111
+#define A37073_TRISC_VALUE 0b1111111111111111
+#define A37073_TRISD_VALUE 0b1111111111111111
+#define A37073_TRISF_VALUE 0b1111111000111111
+#define A37073_TRISG_VALUE 0b1100111111111111
 
 
 #define ICXCON_VALUE  (IC_TIMER2_SRC & IC_INT_1CAPTURE & IC_EVERY_EDGE)
@@ -162,6 +162,7 @@ typedef struct {
   unsigned int run_time_counter;                // This counts how long the unit has been running for.  It wraps every 11 minutes
   unsigned int dac_array[8];
   unsigned int control_ready;
+  unsigned int dac_write_fault;
   
   AnalogOutput analog_output_flow_1;
   AnalogOutput analog_output_flow_2;

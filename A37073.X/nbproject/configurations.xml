@@ -5,6 +5,7 @@
                    displayName="Header Files"
                    projectFiles="true">
       <itemPath>A37073.h</itemPath>
+      <itemPath>FIRMWARE_VERSION.h</itemPath>
     </logicalFolder>
     <logicalFolder name="LinkerScript"
                    displayName="Linker Files"
@@ -40,6 +41,8 @@
       <compileType>
         <linkerTool>
           <linkerLibItems>
+            <linkerLibFileItem>../../ETM_LIBRARY/Version_01/lib/ETM_EEPROM_EXTERNAL.a</linkerLibFileItem>
+            <linkerLibFileItem>../../ETM_LIBRARY/Version_01/lib/ETM_CORE.a</linkerLibFileItem>
           </linkerLibItems>
         </linkerTool>
         <archiverTool>

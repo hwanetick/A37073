@@ -11,8 +11,9 @@ _FGS(CODE_PROT_OFF);
 _FICD(PGD);
 
 void InitializeFlowMeter(TYPE_FLOW_READING* flow_ptr, unsigned int* ptr_icxbuf, unsigned int* ptr_tmrx);
+void UpdateFlowMeterInputCapture(TYPE_FLOW_READING* flow_ptr);
 void CaptureInput(TYPE_FLOW_READING* flow_ptr);
-void UpdateFaults(void);
+void CheckFlowMeter(TYPE_FLOW_READING* flow_ptr);
 
 LTC265X U14_LTC2656;
 
@@ -39,11 +40,11 @@ void DoStateMachine(void) {
     global_data_A37073.control_ready = 0;
     global_data_A37073.startup_counter = 0;
     global_data_A37073.run_time_counter = 0;
+    global_data_A37073.dac_write_fault = 0;
     while (global_data_A37073.control_state == STATE_STARTUP) {
-      DoA37073();
       FlashLEDs();
       if (global_data_A37073.startup_counter >= STARTUP_LED_FLASH_TIME) {
-	global_data_A37073.control_state = STATE_TESTING;	
+        global_data_A37073.control_state = STATE_TESTING;	
       }
     }
     break;
@@ -52,13 +53,15 @@ void DoStateMachine(void) {
   case STATE_TESTING:
     global_data_A37073.control_ready = 0;
     global_data_A37073.test_timer = 0;
+    PIN_LED_A_RED = !OLL_LED_ON;
+    PIN_LED_OPERATIONAL_GREEN = !OLL_LED_ON;
+    PIN_LED_B_GREEN = OLL_LED_ON;
     while (global_data_A37073.control_state == STATE_TESTING) {
       DoA37073();
       if (global_data_A37073.test_timer >= COOLING_INTERFACE_BOARD_TEST_TIME) {
         global_data_A37073.control_state = STATE_READY;
       }
-
-      if (CheckFaults()) {
+      if (global_data_A37073.dac_write_fault) {
         global_data_A37073.control_state = STATE_FAULT;
       }
     }
@@ -66,11 +69,14 @@ void DoStateMachine(void) {
 
 
   case STATE_READY:
-    ResetFaults();
+//    ResetFaults();
     global_data_A37073.control_ready = 1;
+    PIN_LED_A_RED = !OLL_LED_ON;
+    PIN_LED_OPERATIONAL_GREEN = OLL_LED_ON;
+    PIN_LED_B_GREEN = !OLL_LED_ON;
     while (global_data_A37073.control_state == STATE_READY) {
       DoA37073();
-      if (CheckFaults()) {
+      if (global_data_A37073.dac_write_fault) {
         global_data_A37073.control_state = STATE_FAULT;
       }
     }
@@ -78,10 +84,13 @@ void DoStateMachine(void) {
     
   case STATE_FAULT:
     global_data_A37073.control_ready = 1;
+    PIN_LED_A_RED = OLL_LED_ON;
+    PIN_LED_OPERATIONAL_GREEN = !OLL_LED_ON;
+    PIN_LED_B_GREEN = !OLL_LED_ON;
     while (global_data_A37073.control_state == STATE_FAULT) {
       DoA37073();
-      if (CheckFaults()) {
-        global_data_A37073.control_state = STATE_FAULT;
+      if (global_data_A37073.dac_write_fault == 0) {
+        global_data_A37073.control_state = STATE_TESTING;
       }
     }
     break;
@@ -149,7 +158,13 @@ void DoA37073(void) {
 
 
     // ------------ CHECK FOR FAULTS ----------- //
-    UpdateFaults();
+    //UpdateFaults();
+    CheckFlowMeter(&global_data_A37073.flow_meter_1);
+    CheckFlowMeter(&global_data_A37073.flow_meter_2);
+    CheckFlowMeter(&global_data_A37073.flow_meter_3);
+    CheckFlowMeter(&global_data_A37073.flow_meter_4);
+    CheckFlowMeter(&global_data_A37073.flow_meter_5);
+    
 
         // Send out Data to local DAC. Each channel will be updated once every 80mS
     // Do not send out while in state "STATE_WAIT_FOR_CONFIG" because the module is not ready to receive data and
@@ -176,125 +191,82 @@ void DoA37073(void) {
     global_data_A37073.dac_array[4] = global_data_A37073.analog_output_flow_5.dac_setting_scaled_and_calibrated;
     global_data_A37073.dac_array[5] = global_data_A37073.analog_output_spare.dac_setting_scaled_and_calibrated;
     
-    if ((global_data_A37073.run_time_counter & 0b111) == 0b111) {
-      if (WriteLTC2656AllDacChannels(&U14_LTC2656, &global_data_A37073.dac_array)) {
+    unsigned int *ptr_dac_array;
+    
+    ptr_dac_array = global_data_A37073.dac_array;
+    
+    if (((global_data_A37073.run_time_counter & 0b111) == 0b111) || (global_data_A37073.dac_write_fault == 1)) {
+      if (WriteLTC2656AllDacChannels(&U14_LTC2656, ptr_dac_array)) {
         global_data_A37073.dac_write_fault = 1;
-      }  
+      } else {
+        global_data_A37073.dac_write_fault = 0;   
+      } 
     }
 
-    if (global_data_A37073.control_state >= STATE_TESTING) {
-      switch ((global_data_A37073.run_time_counter & 0b111)) {
-	
-      case 0:
-        WriteLTC265X(&U14_LTC2656, LTC265X_WRITE_AND_UPDATE_DAC_A, global_data_A37073.analog_output_flow_1.dac_setting_scaled_and_calibrated);
-
-        break;
-	
-
-      case 1:
-        WriteLTC265X(&U14_LTC2656, LTC265X_WRITE_AND_UPDATE_DAC_B, global_data_A37073.analog_output_flow_2.dac_setting_scaled_and_calibrated);
-
-        break;
-
+//    if (global_data_A37073.control_state >= STATE_TESTING) {
+//      switch ((global_data_A37073.run_time_counter & 0b111)) {
+//	
+//      case 0:
+//        WriteLTC265X(&U14_LTC2656, LTC265X_WRITE_AND_UPDATE_DAC_A, global_data_A37073.analog_output_flow_1.dac_setting_scaled_and_calibrated);
+//
+//        break;
+//	
+//
+//      case 1:
+//        WriteLTC265X(&U14_LTC2656, LTC265X_WRITE_AND_UPDATE_DAC_B, global_data_A37073.analog_output_flow_2.dac_setting_scaled_and_calibrated);
+//
+//        break;
+//
+//    
+//      case 2:
+//        WriteLTC265X(&U14_LTC2656, LTC265X_WRITE_AND_UPDATE_DAC_C, global_data_A37073.analog_output_flow_3.dac_setting_scaled_and_calibrated);
+//
+//        break;
+//
+//      
+//      case 3:
+//        WriteLTC265X(&U14_LTC2656, LTC265X_WRITE_AND_UPDATE_DAC_D, global_data_A37073.analog_output_flow_4.dac_setting_scaled_and_calibrated);
+//
+//        break;
+//
+//
+//      case 4:
+//        WriteLTC265X(&U14_LTC2656, LTC265X_WRITE_AND_UPDATE_DAC_E, global_data_A37073.analog_output_flow_5.dac_setting_scaled_and_calibrated);
+//
+//        break;
+//
+//      
+//      case 5:
+//        WriteLTC265X(&U14_LTC2656, LTC265X_WRITE_AND_UPDATE_DAC_F, global_data_A37073.analog_output_spare.dac_setting_scaled_and_calibrated);
+//
+//        break;
+//
+//    
+//      case 6:
+//        
+//
+//        break;
+//    
+//  
+//      case 7:
+//        
+//
+//        break;
+//      }
+//    }
     
-      case 2:
-        WriteLTC265X(&U14_LTC2656, LTC265X_WRITE_AND_UPDATE_DAC_C, global_data_A37073.analog_output_flow_3.dac_setting_scaled_and_calibrated);
-
-        break;
-
-      
-      case 3:
-        WriteLTC265X(&U14_LTC2656, LTC265X_WRITE_AND_UPDATE_DAC_D, global_data_A37073.analog_output_flow_4.dac_setting_scaled_and_calibrated);
-
-        break;
-
-
-      case 4:
-        WriteLTC265X(&U14_LTC2656, LTC265X_WRITE_AND_UPDATE_DAC_E, global_data_A37073.analog_output_flow_5.dac_setting_scaled_and_calibrated);
-
-        break;
-
-      
-      case 5:
-        WriteLTC265X(&U14_LTC2656, LTC265X_WRITE_AND_UPDATE_DAC_F, global_data_A37073.analog_output_spare.dac_setting_scaled_and_calibrated);
-
-        break;
-
-    
-      case 6:
-        
-
-        break;
-    
-  
-      case 7:
-        
-
-        break;
-      }
-    }
-    
-    if (WriteLTC2656AllDacChannels(&U14_LTC2656, &global_data_A37073.dac_array)) {
-      FAULT;
-    }
   }
 }
 
-
-void UpdateFaults(void) {
-
- if (CheckFlowMeterFault(&global_data_A37073.flow_meter_1)) {
-    _FAULT_FLOW_SENSOR_1 = 1;
-    _STATUS_FLOW_OK = 0;
-  } else { 
-      _FAULT_FLOW_SENSOR_1 = 0;   
-  }
-  
-  if (CheckFlowMeterFault(&global_data_A37073.flow_meter_2)) {
-#ifndef __BENCH_TOP_MODE
-    _FAULT_FLOW_SENSOR_2 = 1;
-    _STATUS_FLOW_OK = 0;
-#endif
-  } else { 
-      _FAULT_FLOW_SENSOR_2 = 0;   
-  }
-
-  if (CheckFlowMeterFault(&global_data_A37073.flow_meter_3)) {
-#ifndef __BENCH_TOP_MODE
-    _FAULT_FLOW_SENSOR_3 = 1;
-    _STATUS_FLOW_OK = 0;
-#endif
-  } else { 
-      _FAULT_FLOW_SENSOR_3 = 0;   
-  }
-
-  if (CheckFlowMeterFault(&global_data_A37073.flow_meter_4)) {
-#ifndef __BENCH_TOP_MODE
-    _FAULT_FLOW_SENSOR_4 = 1;
-    _STATUS_FLOW_OK = 0;
-#endif
-  } else { 
-      _FAULT_FLOW_SENSOR_4 = 0;   
-  }
-
-  if (CheckFlowMeterFault(&global_data_A37073.flow_meter_5)) {
-#ifndef __BENCH_TOP_MODE
-    _FAULT_FLOW_SENSOR_5 = 1;
-    _STATUS_FLOW_OK = 0;
-#endif
-  } else { 
-      _FAULT_FLOW_SENSOR_5 = 0;   
-  }
-}
 
 void InitializeA37073(void) {
 
 
   // Initialize the status register and load the inhibit and fault masks
-  _CONTROL_REGISTER = 0;
-  _FAULT_REGISTER = 0;
-  _WARNING_REGISTER = 0;
-  _NOT_LOGGED_REGISTER = 0;
+//  _CONTROL_REGISTER = 0;
+//  _FAULT_REGISTER = 0;
+//  _WARNING_REGISTER = 0;
+//  _NOT_LOGGED_REGISTER = 0;
 
   
   // Initialize all I/O Registers
@@ -324,18 +296,18 @@ void InitializeA37073(void) {
 
   //Initialize the internal ADC for Startup Power Checks
   // ---- Configure the dsPIC ADC Module ------------ //
-  ADCON1 = ADCON1_SETTING;             // Configure the high speed ADC module based on H file parameters
-  ADCON2 = ADCON2_SETTING;             // Configure the high speed ADC module based on H file parameters
-  ADPCFG = ADPCFG_SETTING;             // Set which pins are analog and which are digital I/O
-  ADCHS  = ADCHS_SETTING;              // Configure the high speed ADC module based on H file parameters
-
-  ADCON3 = ADCON3_SETTING;             // Configure the high speed ADC module based on H file parameters
-  ADCSSL = ADCSSL_SETTING;
-
-  _ADIF = 0;
-  _ADIP = 6; // This needs to be higher priority than the CAN interrupt (Which defaults to 4)
-  _ADIE = 1;
-  _ADON = 1;
+//  ADCON1 = ADCON1_SETTING;             // Configure the high speed ADC module based on H file parameters
+//  ADCON2 = ADCON2_SETTING;             // Configure the high speed ADC module based on H file parameters
+//  ADPCFG = ADPCFG_SETTING;             // Set which pins are analog and which are digital I/O
+//  ADCHS  = ADCHS_SETTING;              // Configure the high speed ADC module based on H file parameters
+//
+//  ADCON3 = ADCON3_SETTING;             // Configure the high speed ADC module based on H file parameters
+//  ADCSSL = ADCSSL_SETTING;
+//
+//  _ADIF = 0;
+//  _ADIP = 6; // This needs to be higher priority than the CAN interrupt (Which defaults to 4)
+//  _ADIE = 1;
+//  _ADON = 1;
 
   // Initialize LTC DAC
   SetupLTC265X(&U14_LTC2656, ETM_SPI_PORT_2, FCY_CLK, LTC265X_SPI_2_5_M_BIT, _PIN_RG15, _PIN_RC1);
@@ -524,13 +496,7 @@ void UpdateFlowMeterInputCapture(TYPE_FLOW_READING* flow_ptr) {
       CaptureInput(flow_ptr);
     }
   } 
-
-  if (flow_ptr->ICXBUF_ptr == &IC6BUF) {
-    if (_IC6IF) {
-      _IC6IF = 0;
-      CaptureInput(flow_ptr);
-    }
-  }
+  
 }
 
 void CaptureInput(TYPE_FLOW_READING* flow_ptr) {
@@ -554,7 +520,7 @@ void CaptureInput(TYPE_FLOW_READING* flow_ptr) {
   }
 }
 
-unsigned int CheckFlowMeterFault(TYPE_FLOW_READING* flow_ptr) {
+void CheckFlowMeter(TYPE_FLOW_READING* flow_ptr) {
   unsigned long period_lng;
   unsigned int period;
   period_lng  = flow_ptr->period_array[0];
@@ -596,15 +562,16 @@ unsigned int CheckFlowMeterFault(TYPE_FLOW_READING* flow_ptr) {
     //flow_ptr->flow_reading = RCFilterNTau(flow_ptr->flow_reading, (FLOW_METER_ML_PER_HZ*flow_ptr->frequency + FLOW_METER_CONSTANT), RC_FILTER_256_TAU);
   }
 
-  if (flow_ptr->minimum_flow == 0) {
-    return 0;
-  }
-
-  if (flow_ptr->flow_reading < flow_ptr->minimum_flow) {
-    ETMDigitalUpdateInput(&flow_ptr->digital_fault, 1);
-  } else {
-    ETMDigitalUpdateInput(&flow_ptr->digital_fault, 0);
-  }
-  
-  return ETMDigitalFilteredOutput(&flow_ptr->digital_fault);
+//  if (flow_ptr->minimum_flow == 0) {
+//    return 0;
+//  }
+//
+//  if (flow_ptr->flow_reading < flow_ptr->minimum_flow) {
+//    ETMDigitalUpdateInput(&flow_ptr->digital_fault, 1);
+//  } else {
+//    ETMDigitalUpdateInput(&flow_ptr->digital_fault, 0);
+//  }
+//  
+//  return ETMDigitalFilteredOutput(&flow_ptr->digital_fault);
+  return;
 }
