@@ -42,6 +42,7 @@ void DoStateMachine(void) {
     global_data_A37073.run_time_counter = 0;
     global_data_A37073.dac_write_fault = 0;
     while (global_data_A37073.control_state == STATE_STARTUP) {
+      DoA37073();
       FlashLEDs();
       if (global_data_A37073.startup_counter >= STARTUP_LED_FLASH_TIME) {
         global_data_A37073.control_state = STATE_TESTING;	
@@ -103,7 +104,7 @@ void DoStateMachine(void) {
 
 void DoA37073(void) {
 
-  // DPARKER - Need to figure out how to update flow meters only if the _IF is active
+  ClrWdt();
 
   // This needs to happen every time through the control loop to capture high frequency PWM
   UpdateFlowMeterInputCapture(&global_data_A37073.flow_meter_1);
