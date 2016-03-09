@@ -128,7 +128,7 @@
 #define PR2_VALUE_MAX                  0xFFFF
 
 
-#define DAC_TEST_VALUE                1234
+#define DAC_TEST_VALUE                 0
 
 #define DAC_MONITOR_FLOW_FIXED_SCALE   1.927
 #define DAC_MONITOR_FLOW_FIXED_OFFSET  0
@@ -162,7 +162,7 @@ typedef struct {
   unsigned int run_time_counter;                // This counts how long the unit has been running for.  It wraps every 11 minutes
   unsigned int dac_array[8];
   unsigned int control_ready;
-  unsigned int dac_write_fault;
+  unsigned char dac_write_fault;
   
   AnalogOutput analog_output_flow_1;
   AnalogOutput analog_output_flow_2;

@@ -1,4 +1,4 @@
-// A37073 
+// A37073 PWM Flow Meter Converter
 
 #include "A37073.h"
 
@@ -23,6 +23,9 @@ void InitializeA37073(void);
 void DoStateMachine(void);
 void DoA37073(void);
 void FlashLEDs(void);
+void EnableOutputs(void);
+
+unsigned int capture = 0;
 
 int main(void) {
   global_data_A37073.control_state = STATE_STARTUP;
@@ -50,7 +53,6 @@ void DoStateMachine(void) {
     }
     break;
 
-
   case STATE_TESTING:
     global_data_A37073.control_ready = 0;
     global_data_A37073.test_timer = 0;
@@ -68,13 +70,12 @@ void DoStateMachine(void) {
     }
     break;
 
-
   case STATE_READY:
-//    ResetFaults();
     global_data_A37073.control_ready = 1;
     PIN_LED_A_RED = !OLL_LED_ON;
     PIN_LED_OPERATIONAL_GREEN = OLL_LED_ON;
     PIN_LED_B_GREEN = !OLL_LED_ON;
+    EnableOutputs();
     while (global_data_A37073.control_state == STATE_READY) {
       DoA37073();
       if (global_data_A37073.dac_write_fault) {
@@ -129,47 +130,14 @@ void DoA37073(void) {
     if (global_data_A37073.startup_counter > STARTUP_LED_FLASH_TIME) {
       global_data_A37073.startup_counter = STARTUP_LED_FLASH_TIME;
     }
+    
 
-//    ETMCanSlaveSetDebugRegister(0x0, global_data_A36926.flow_meter_1_magnetron.period_array[0]);
-//    ETMCanSlaveSetDebugRegister(0x1, global_data_A36926.flow_meter_1_magnetron.period_array[1]);
-//    ETMCanSlaveSetDebugRegister(0x2, global_data_A36926.flow_meter_1_magnetron.array_index);
-//    ETMCanSlaveSetDebugRegister(0x3, global_data_A36926.flow_meter_1_magnetron.long_pulse);
-//
-//    ETMCanSlaveSetDebugRegister(0x4, global_data_A36926.flow_meter_1_magnetron.minimum_flow);
-//    ETMCanSlaveSetDebugRegister(0x5, global_data_A36926.flow_meter_1_magnetron.frequency);
-//    ETMCanSlaveSetDebugRegister(0x6, global_data_A36926.flow_meter_1_magnetron.flow_reading);
-//    ETMCanSlaveSetDebugRegister(0x7, global_data_A36926.analog_input_SF6_pressure.filtered_adc_reading);//global_data_A36926.control_state);
-//
-//
-//    // Update all the logging data
-//    slave_board_data.log_data[0] = global_data_A36926.flow_meter_1_magnetron.flow_reading;
-//    slave_board_data.log_data[1] = global_data_A36926.flow_meter_2_linac.flow_reading;
-//    slave_board_data.log_data[2] = global_data_A36926.flow_meter_3_hv_tank.flow_reading;
-//    slave_board_data.log_data[3] = global_data_A36926.flow_meter_4_hvps.flow_reading;
-//    slave_board_data.log_data[4] = global_data_A36926.flow_meter_5_circulator.flow_reading;
-//    slave_board_data.log_data[5] = global_data_A36926.flow_meter_6_alternate.flow_reading;
-//
-//    slave_board_data.log_data[8] = global_data_A36926.linac_temperature_kelvin;
-//    slave_board_data.log_data[9] = global_data_A36926.coolant_temperature_kelvin;
-//    slave_board_data.log_data[10] = global_data_A36926.cabinet_temperature_kelvin;
-//    slave_board_data.log_data[11] = global_data_A36926.analog_input_SF6_pressure.reading_scaled_and_calibrated;
-//    slave_board_data.log_data[12] = global_data_A36926.SF6_pulses_available;
-//    slave_board_data.log_data[13] = global_data_A36926.SF6_low_pressure_override_counter;
-//    slave_board_data.log_data[14] = global_data_A36926.SF6_bottle_pulses_remaining;
-
-
-    // ------------ CHECK FOR FAULTS ----------- //
-    //UpdateFaults();
     CheckFlowMeter(&global_data_A37073.flow_meter_1);
     CheckFlowMeter(&global_data_A37073.flow_meter_2);
     CheckFlowMeter(&global_data_A37073.flow_meter_3);
     CheckFlowMeter(&global_data_A37073.flow_meter_4);
     CheckFlowMeter(&global_data_A37073.flow_meter_5);
     
-
-        // Send out Data to local DAC. Each channel will be updated once every 80mS
-    // Do not send out while in state "STATE_WAIT_FOR_CONFIG" because the module is not ready to receive data and
-    // you will just get data transfer errors
     
     global_data_A37073.analog_output_flow_1.set_point = global_data_A37073.flow_meter_1.flow_reading;
     global_data_A37073.analog_output_flow_2.set_point = global_data_A37073.flow_meter_2.flow_reading;
@@ -177,6 +145,7 @@ void DoA37073(void) {
     global_data_A37073.analog_output_flow_4.set_point = global_data_A37073.flow_meter_4.flow_reading;
     global_data_A37073.analog_output_flow_5.set_point = global_data_A37073.flow_meter_5.flow_reading;
     global_data_A37073.analog_output_spare.set_point = DAC_TEST_VALUE;
+    
 
     ETMAnalogScaleCalibrateDACSetting(&global_data_A37073.analog_output_flow_1);
     ETMAnalogScaleCalibrateDACSetting(&global_data_A37073.analog_output_flow_2);
@@ -184,6 +153,23 @@ void DoA37073(void) {
     ETMAnalogScaleCalibrateDACSetting(&global_data_A37073.analog_output_flow_4);
     ETMAnalogScaleCalibrateDACSetting(&global_data_A37073.analog_output_flow_5);
     ETMAnalogScaleCalibrateDACSetting(&global_data_A37073.analog_output_spare);
+    
+//    // Debugging Analog Outputs
+//    if (global_data_A37073.control_state == STATE_READY) {
+////      if (global_data_A37073.analog_output_spare.dac_setting_scaled_and_calibrated == 0) {
+////        PIN_LED_A_RED = OLL_LED_ON;
+////      } else if (global_data_A37073.analog_output_spare.dac_setting_scaled_and_calibrated == 0x1000) {
+////        PIN_LED_B_GREEN = OLL_LED_ON; 
+////      }
+//      if (capture == 0) {
+//        capture = 1;
+//        if (global_data_A37073.analog_output_spare.dac_setting_scaled_and_calibrated == 0) {
+//          PIN_LED_A_RED = OLL_LED_ON;
+//        } else if (global_data_A37073.analog_output_spare.dac_setting_scaled_and_calibrated == 0x7FFF) {
+//          PIN_LED_B_GREEN = OLL_LED_ON; 
+//        }
+//      }
+//    }
     
     global_data_A37073.dac_array[0] = global_data_A37073.analog_output_flow_1.dac_setting_scaled_and_calibrated;
     global_data_A37073.dac_array[1] = global_data_A37073.analog_output_flow_2.dac_setting_scaled_and_calibrated;
@@ -196,6 +182,7 @@ void DoA37073(void) {
     
     ptr_dac_array = global_data_A37073.dac_array;
     
+    // Write to all DAC outputs every 80ms
     if (((global_data_A37073.run_time_counter & 0b111) == 0b111) || (global_data_A37073.dac_write_fault == 1)) {
       if (WriteLTC2656AllDacChannels(&U14_LTC2656, ptr_dac_array)) {
         global_data_A37073.dac_write_fault = 1;
@@ -203,71 +190,12 @@ void DoA37073(void) {
         global_data_A37073.dac_write_fault = 0;   
       } 
     }
-
-//    if (global_data_A37073.control_state >= STATE_TESTING) {
-//      switch ((global_data_A37073.run_time_counter & 0b111)) {
-//	
-//      case 0:
-//        WriteLTC265X(&U14_LTC2656, LTC265X_WRITE_AND_UPDATE_DAC_A, global_data_A37073.analog_output_flow_1.dac_setting_scaled_and_calibrated);
-//
-//        break;
-//	
-//
-//      case 1:
-//        WriteLTC265X(&U14_LTC2656, LTC265X_WRITE_AND_UPDATE_DAC_B, global_data_A37073.analog_output_flow_2.dac_setting_scaled_and_calibrated);
-//
-//        break;
-//
-//    
-//      case 2:
-//        WriteLTC265X(&U14_LTC2656, LTC265X_WRITE_AND_UPDATE_DAC_C, global_data_A37073.analog_output_flow_3.dac_setting_scaled_and_calibrated);
-//
-//        break;
-//
-//      
-//      case 3:
-//        WriteLTC265X(&U14_LTC2656, LTC265X_WRITE_AND_UPDATE_DAC_D, global_data_A37073.analog_output_flow_4.dac_setting_scaled_and_calibrated);
-//
-//        break;
-//
-//
-//      case 4:
-//        WriteLTC265X(&U14_LTC2656, LTC265X_WRITE_AND_UPDATE_DAC_E, global_data_A37073.analog_output_flow_5.dac_setting_scaled_and_calibrated);
-//
-//        break;
-//
-//      
-//      case 5:
-//        WriteLTC265X(&U14_LTC2656, LTC265X_WRITE_AND_UPDATE_DAC_F, global_data_A37073.analog_output_spare.dac_setting_scaled_and_calibrated);
-//
-//        break;
-//
-//    
-//      case 6:
-//        
-//
-//        break;
-//    
-//  
-//      case 7:
-//        
-//
-//        break;
-//      }
-//    }
     
   }
 }
 
 
 void InitializeA37073(void) {
-
-
-  // Initialize the status register and load the inhibit and fault masks
-//  _CONTROL_REGISTER = 0;
-//  _FAULT_REGISTER = 0;
-//  _WARNING_REGISTER = 0;
-//  _NOT_LOGGED_REGISTER = 0;
 
   
   // Initialize all I/O Registers
@@ -292,33 +220,18 @@ void InitializeA37073(void) {
   T1CON = T1CON_VALUE;
 
 
-
-
-
-  //Initialize the internal ADC for Startup Power Checks
-  // ---- Configure the dsPIC ADC Module ------------ //
-//  ADCON1 = ADCON1_SETTING;             // Configure the high speed ADC module based on H file parameters
-//  ADCON2 = ADCON2_SETTING;             // Configure the high speed ADC module based on H file parameters
-//  ADPCFG = ADPCFG_SETTING;             // Set which pins are analog and which are digital I/O
-//  ADCHS  = ADCHS_SETTING;              // Configure the high speed ADC module based on H file parameters
-//
-//  ADCON3 = ADCON3_SETTING;             // Configure the high speed ADC module based on H file parameters
-//  ADCSSL = ADCSSL_SETTING;
-//
-//  _ADIF = 0;
-//  _ADIP = 6; // This needs to be higher priority than the CAN interrupt (Which defaults to 4)
-//  _ADIE = 1;
-//  _ADON = 1;
-
   // Initialize LTC DAC
   SetupLTC265X(&U14_LTC2656, ETM_SPI_PORT_2, FCY_CLK, LTC265X_SPI_2_5_M_BIT, _PIN_RG15, _PIN_RC1);
     
   // Initialize the External EEprom
   ETMEEPromConfigureExternalDevice(EEPROM_SIZE_8K_BYTES, FCY_CLK, 400000, EEPROM_I2C_ADDRESS_0, 1);
 
-  // Initialize the Can module
-  // ETMCanSlaveInitialize(CAN_PORT_1, FCY_CLK, ETM_CAN_ADDR_COOLING_INTERFACE_BOARD, _PIN_RG13, 4, _PIN_RA7, _PIN_RG12);
-  // ETMCanSlaveLoadConfiguration(36926, 002, FIRMWARE_AGILE_REV, FIRMWARE_BRANCH, FIRMWARE_BRANCH_REV);
+
+  if (!ETMAnalogCheckEEPromInitialized()) {
+    ETMAnalogLoadDefaultCalibration();
+    ETMEEPromWriteWord(0x0180, 65100);
+    ETMEEPromWriteWord(0x0181, 0x31);
+  }
   
   // ----------------------- Initialize on Board DAC Outputs ---------------------------- //  
   ETMAnalogInitializeOutput(&global_data_A37073.analog_output_flow_1,
@@ -337,7 +250,7 @@ void InitializeA37073(void) {
                             0,
                             0);
   
-    ETMAnalogInitializeOutput(&global_data_A37073.analog_output_flow_3,
+  ETMAnalogInitializeOutput(&global_data_A37073.analog_output_flow_3,
                             MACRO_DEC_TO_SCALE_FACTOR_16(DAC_MONITOR_FLOW_FIXED_SCALE),
                             DAC_MONITOR_FLOW_FIXED_OFFSET,
                             ANALOG_OUTPUT_3,
@@ -345,7 +258,7 @@ void InitializeA37073(void) {
                             0,
                             0);
     
-    ETMAnalogInitializeOutput(&global_data_A37073.analog_output_flow_4,
+  ETMAnalogInitializeOutput(&global_data_A37073.analog_output_flow_4,
                             MACRO_DEC_TO_SCALE_FACTOR_16(DAC_MONITOR_FLOW_FIXED_SCALE),
                             DAC_MONITOR_FLOW_FIXED_OFFSET,
                             ANALOG_OUTPUT_4,
@@ -353,7 +266,7 @@ void InitializeA37073(void) {
                             0,
                             0);
     
-    ETMAnalogInitializeOutput(&global_data_A37073.analog_output_flow_5,
+  ETMAnalogInitializeOutput(&global_data_A37073.analog_output_flow_5,
                             MACRO_DEC_TO_SCALE_FACTOR_16(DAC_MONITOR_FLOW_FIXED_SCALE),
                             DAC_MONITOR_FLOW_FIXED_OFFSET,
                             ANALOG_OUTPUT_5,
@@ -361,13 +274,21 @@ void InitializeA37073(void) {
                             0,
                             0);
     
-    ETMAnalogInitializeOutput(&global_data_A37073.analog_output_spare,
+  ETMAnalogInitializeOutput(&global_data_A37073.analog_output_spare,
                             MACRO_DEC_TO_SCALE_FACTOR_16(DAC_MONITOR_SPARE_FIXED_SCALE),
                             DAC_MONITOR_SPARE_FIXED_OFFSET,
                             ANALOG_OUTPUT_6,
                             0xFFFF,
                             0,
                             0);
+  
+  // Disable analog outputs  
+  global_data_A37073.analog_output_flow_1.enabled = 0;
+  global_data_A37073.analog_output_flow_2.enabled = 0;
+  global_data_A37073.analog_output_flow_3.enabled = 0;
+  global_data_A37073.analog_output_flow_4.enabled = 0;
+  global_data_A37073.analog_output_flow_5.enabled = 0;
+  global_data_A37073.analog_output_spare.enabled  = 0;
     
   // Set unused DAC channels
   global_data_A37073.dac_array[6] = 0;
@@ -419,7 +340,15 @@ void FlashLEDs(void) {
   }
 }
 
-
+void EnableOutputs(void)  {
+  global_data_A37073.analog_output_flow_1.enabled = 1;
+  global_data_A37073.analog_output_flow_2.enabled = 1;
+  global_data_A37073.analog_output_flow_3.enabled = 1;
+  global_data_A37073.analog_output_flow_4.enabled = 1;
+  global_data_A37073.analog_output_flow_5.enabled = 1;
+  global_data_A37073.analog_output_spare.enabled  = 1;
+  
+}
 
 void InitializeFlowMeter(TYPE_FLOW_READING* flow_ptr, unsigned int* ptr_icxbuf, unsigned int* ptr_tmrx) {
   flow_ptr->period_array[0] = PWM_MAX_PERIOD;
@@ -563,16 +492,5 @@ void CheckFlowMeter(TYPE_FLOW_READING* flow_ptr) {
     //flow_ptr->flow_reading = RCFilterNTau(flow_ptr->flow_reading, (FLOW_METER_ML_PER_HZ*flow_ptr->frequency + FLOW_METER_CONSTANT), RC_FILTER_256_TAU);
   }
 
-//  if (flow_ptr->minimum_flow == 0) {
-//    return 0;
-//  }
-//
-//  if (flow_ptr->flow_reading < flow_ptr->minimum_flow) {
-//    ETMDigitalUpdateInput(&flow_ptr->digital_fault, 1);
-//  } else {
-//    ETMDigitalUpdateInput(&flow_ptr->digital_fault, 0);
-//  }
-//  
-//  return ETMDigitalFilteredOutput(&flow_ptr->digital_fault);
   return;
 }
